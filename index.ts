@@ -1,4 +1,13 @@
-// lens-gate – Worker hinter der KI-Bildbewertung von PPS Lens (v2)
+// lens-gate – Worker hinter der KI-Bildbewertung von PPS Lens (v3)
+// v3 (26.11.2026, Claude): mehr PPS (Eric 26.11.: „mehr Intelligenz … das PPS-Universum da noch mehr abbilden … grafische
+//     Elemente, wo wir etwas zeigen können“ → „1, ja … mach mal weiter“):
+//   - PPS-Haltung wie im KI-Coach im Prompt, dazu ein „merksatz“ im PPS-Ton
+//   - jeder Tipp kann auf eine passende PPS-Lektion zeigen: tips[].link = { titel, url, code, modul, produkt }
+//     (135 öffentliche Artikel auf prophotoskills.com, Liste in lektionen.ts – wie im KI-Coach)
+//   - markers: bis zu 5 Punkte im Bild { x, y (0..1, 0/0 = oben links), label, art: staerke|problem|hinweis, kat }
+//     – Format mit dem App-Thread abgestimmt. Positionen sind ungefähr (die KI schätzt sie).
+//   - Testseite zeichnet die Punkte auf das Foto und zeigt die Lektions-Links
+//   Antwort bleibt abwärtskompatibel (nur neue, optionale Felder).
 // v2 (26.11.2026, Claude): nur Testseite – Fortschritt und Fehler werden angezeigt, Bild-Laden mit Ausweichweg.
 // v1 (26.11.2026, Claude): Name lens-gate wie books-gate (Eric 26.11.: „beim Worker und bei Cloudflare lege ich das an mit
 //     Lensgate“). Inhalt = lens-api_v2 (Datenschutz-Fassung), sonst unverändert. Frühere Stände hießen lens-api:
@@ -56,6 +65,7 @@
 //                       (die Testseite /test braucht keinen Eintrag – sie läuft auf dem Worker selbst)
 
 import { testseite } from "./testseite";
+import { LEKTIONEN, PRODUKT_VON_MODUL } from "./lektionen";
 
 export interface Env {
   SUPABASE_URL?: string;
@@ -65,7 +75,7 @@ export interface Env {
   ALLOWED_ORIGINS?: string;
 }
 
-const VERSION = 2;
+const VERSION = 3;
 // Version des Einwilligungstextes – ändert sich der Text in der App, hier hochzählen → alle willigen neu ein
 export const DATENSCHUTZ_VERSION = "2026-11-26";
 const MAX_BILD_ZEICHEN = 6_000_000; // ≈ 4,5 MB Bild
@@ -216,7 +226,7 @@ export function jpegOhneMetadaten(bytes: Uint8Array): { bytes: Uint8Array; entfe
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["ist_foto", "titel", "genre", "scores", "notes", "summary", "tips", "preset"],
+  required: ["ist_foto", "titel", "genre", "scores", "notes", "summary", "merksatz", "tips", "markers", "preset"],
   properties: {
     ist_foto: { type: "boolean", description: "false, wenn das Bild kein Foto ist (Screenshot, Grafik, Text, leer)" },
     titel: { type: "string", description: "kurzer Bildtitel, 2–6 Wörter" },
@@ -234,17 +244,35 @@ const SCHEMA = {
       properties: Object.fromEntries(KAT_KEYS.map((k) => [k, { type: "string", description: `ein Satz zu ${KATEGORIEN[k]}` }])),
     },
     summary: { type: "string", description: "2–3 Sätze: größte Stärke und wo am meisten zu holen ist" },
+    merksatz: { type: "string", description: "ein kurzer Satz im PPS-Ton, der den wichtigsten Gedanken zu diesem Bild auf den Punkt bringt" },
     tips: {
       type: "array",
       description: "genau 3 konkrete, umsetzbare Tipps, wichtigster zuerst",
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["icon", "label", "text"],
+        required: ["icon", "label", "text", "lektion"],
         properties: {
           icon: { type: "string", enum: ICONS },
           label: { type: "string", description: "1–2 Wörter, z. B. Belichtung" },
           text: { type: "string", description: "ein Satz mit konkretem Wert (EV, mm, s, Regler)" },
+          lektion: { type: "string", enum: [...LEKTIONEN.map((l) => l.code), "KEINE"], description: "Code der PPS-Lektion, die genau dieses Thema vertieft, sonst KEINE" },
+        },
+      },
+    },
+    markers: {
+      type: "array",
+      description: "0–5 Stellen im Bild, die du zeigen willst (Hauptmotiv, ausgefressene Lichter, Störer am Rand, Fluchtpunkt …)",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["x", "y", "label", "art", "kat"],
+        properties: {
+          x: { type: "number", description: "waagerecht 0 (links) bis 1 (rechts), Mitte der Stelle" },
+          y: { type: "number", description: "senkrecht 0 (oben) bis 1 (unten), Mitte der Stelle" },
+          label: { type: "string", description: "höchstens 40 Zeichen, z. B. „Lichter fressen aus“" },
+          art: { type: "string", enum: ["staerke", "problem", "hinweis"] },
+          kat: { type: "string", enum: KAT_KEYS },
         },
       },
     },
@@ -263,6 +291,15 @@ export function systemPrompt(sprache: string): string {
     "Nutze die ganze Skala; nicht jedes Bild ist 8. Bewerte, was im Bild zu sehen ist, nicht was die EXIF-Daten vermuten lassen.",
     "",
     "Tipps: genau 3, sofort beim nächsten Foto oder in Lightroom umsetzbar, mit konkreten Werten (z. B. -0,7 EV, 1/60 s, Tiefen +25).",
+    "Haltung (ProPhotoSkills, Eric P.): „Fotografie beginnt nicht mit der Kamera. Sie beginnt im Kopf.“ Verbinde Technik mit Wahrnehmung,",
+    "Vorbereitung und Bildwirkung – wie ein erfahrener Kollege am Set: locker, auf Augenhöhe, nicht belehrend. Emotion vor Perfektion.",
+    "",
+    "PPS-Lektionen: Gib bei jedem Tipp den Code der Lektion an, die genau dieses Thema vertieft – nur wenn sie wirklich passt, sonst KEINE.",
+    "Keine Lektion zweimal. Verkaufe nichts, nenne keine Preise.",
+    ...LEKTIONEN.map((l) => `${l.code} [${l.modul}] ${l.titel}`),
+    "",
+    "Markierungen (markers): Zeige 2–5 Stellen im Bild – mindestens das Hauptmotiv bzw. die größte Stärke und das wichtigste Problem.",
+    "x/y = Mitte der Stelle als Anteil der Bildbreite/-höhe (0/0 oben links). Kurze Beschriftung, höchstens 40 Zeichen.",
     "Bei Menschen im Bild: nur Fotografie bewerten (Licht, Pose, Bildschnitt), niemals Aussehen, Körper, Alter oder Herkunft.",
     "Nenne nie Namen, Orte, Adressen, Kennzeichen oder andere Angaben, die eine Person oder einen Ort identifizieren – auch nicht im Titel.",
     "Ist das Bild kein Foto (Screenshot, Grafik, Text, leer), setze ist_foto = false und fülle den Rest kurz aus.",
@@ -281,9 +318,17 @@ type KiAntwort = {
   scores: Record<Kat, number>;
   notes: Record<Kat, string>;
   summary: string;
-  tips: { icon: string; label: string; text: string }[];
+  merksatz?: string;
+  tips: { icon: string; label: string; text: string; lektion?: string }[];
+  markers?: { x: number; y: number; label: string; art: string; kat: string }[];
   preset: number;
 };
+
+export function lektionLink(code: string | undefined) {
+  const l = LEKTIONEN.find((x) => x.code === code);
+  if (!l || !/^https:\/\//.test(l.url)) return undefined;
+  return { titel: l.titel, url: l.url, code: l.code, modul: l.modul, produkt: PRODUKT_VON_MODUL[l.modul] ?? null };
+}
 
 async function frageKi(env: Env, bild: string, exif: Record<string, string> | null, sprache: string): Promise<{ antwort: KiAntwort; modell: string }> {
   const key = clean(env.OPENAI_API_KEY);
@@ -300,7 +345,7 @@ async function frageKi(env: Env, bild: string, exif: Record<string, string> | nu
       model: modell,
       store: false,
       temperature: 0.4,
-      max_tokens: 1200,
+      max_tokens: 1600,
       response_format: { type: "json_schema", json_schema: { name: "bildbewertung", strict: true, schema: SCHEMA } },
       messages: [
         { role: "system", content: systemPrompt(sprache) },
@@ -336,7 +381,21 @@ export function aufbereiten(a: KiAntwort, exif: Record<string, string> | null, d
   const tips = (Array.isArray(a.tips) ? a.tips : [])
     .filter((t) => t && t.text)
     .slice(0, 3)
-    .map((t) => ({ icon: ICONS.includes(t.icon) ? t.icon : "fa-lightbulb", label: String(t.label).slice(0, 40), text: String(t.text).slice(0, 400) }));
+    .map((t) => {
+      const link = lektionLink(t.lektion);
+      return { icon: ICONS.includes(t.icon) ? t.icon : "fa-lightbulb", label: String(t.label).slice(0, 40), text: String(t.text).slice(0, 400), ...(link ? { link } : {}) };
+    });
+  // jede Lektion nur einmal verlinken
+  const gesehen = new Set<string>();
+  for (const t of tips as { link?: { code: string } }[]) {
+    if (t.link) { if (gesehen.has(t.link.code)) delete t.link; else gesehen.add(t.link.code); }
+  }
+  const anteil = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.round(Math.max(0, Math.min(1, v)) * 1000) / 1000 : null);
+  const markers = (Array.isArray(a.markers) ? a.markers : [])
+    .map((m) => ({ x: anteil(m?.x), y: anteil(m?.y), label: String(m?.label ?? "").slice(0, 40), art: m?.art, kat: m?.kat }))
+    .filter((m) => m.x !== null && m.y !== null && m.label && ["staerke", "problem", "hinweis"].includes(String(m.art)))
+    .map((m) => ({ ...m, kat: KAT_KEYS.includes(m.kat as Kat) ? m.kat : undefined }))
+    .slice(0, 5);
   const titel = (a.titel || dateiname || "Eigener Upload").slice(0, 80);
   return {
     title: `${titel} • ${a.genre || "Foto"}`,
@@ -344,7 +403,9 @@ export function aufbereiten(a: KiAntwort, exif: Record<string, string> | null, d
     scores: { total, ...scores },
     notes: Object.fromEntries(KAT_KEYS.map((k) => [k, String(a.notes?.[k] ?? "").slice(0, 300)])),
     summary: String(a.summary ?? "").slice(0, 800),
+    ...(a.merksatz ? { merksatz: String(a.merksatz).slice(0, 200) } : {}),
     tips,
+    markers,
     preset: PRESETS.some((p) => p.id === a.preset) ? a.preset : 4,
   };
 }

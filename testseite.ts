@@ -1,4 +1,6 @@
-// Testseite des Workers lens-gate (v2) – GET /test
+// Testseite des Workers lens-gate (v3) – GET /test
+// v3 (26.11.): Markierungen auf dem Foto, Merksatz, Links zu passenden PPS-Lektionen.
+// v2 (26.11.): Fortschritt + Fehler sichtbar, Bild-Laden mit Ausweichweg.
 // Zum Ausprobieren ohne fertige App (Eric 26.11.: „sag mir, wie wir den einmal zum Sehen kriegen“):
 // mit dem Web-Login-Konto anmelden, Einwilligung geben, Foto wählen, Bewertung sehen, Verlauf/Export/Löschen.
 // Schlicht gehalten – das echte Aussehen kommt aus dem Dummy (DUMMY_pps-lens_v2.html).
@@ -19,7 +21,11 @@ export function testseite(supabaseUrl: string, anonKey: string, version: string)
   label{display:block;margin:8px 0} .note{font-size:40px;font-weight:700}
   .kat{display:flex;justify-content:space-between;border-top:1px solid #eee;padding:6px 0}
   pre{white-space:pre-wrap;background:#f0f0ec;padding:10px;border-radius:8px;font-size:12px;max-height:300px;overflow:auto}
-  img.vorschau{max-width:100%;border-radius:8px;margin-top:8px} .fehler{color:#b00020}
+  img.vorschau{max-width:100%;border-radius:8px;margin-top:8px}
+  .mk{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.5);color:#fff;font:700 13px/20px system-ui;text-align:center}
+  .mk.staerke{background:#1e9e5a}.mk.problem{background:#d23b3b}.mk.hinweis{background:#e0a100}
+  .mkl{position:absolute;transform:translate(-50%,16px);background:rgba(0,0,0,.75);color:#fff;font-size:12px;padding:2px 6px;border-radius:6px;white-space:nowrap}
+  .merksatz{font-style:italic;border-left:4px solid #e0a100;padding-left:10px} .fehler{color:#b00020}
 </style></head><body>
 <h1>PPS Lens – Test der KI-Bildbewertung</h1>
 <div class="klein">Worker lens-gate · Anmeldung mit deinem ProPhotoSkills-Konto (Web-Login)</div>
@@ -50,7 +56,7 @@ export function testseite(supabaseUrl: string, anonKey: string, version: string)
     <label><input type="checkbox" id="c-rechte"> Ich habe die Rechte an diesem Foto, und erkennbare Personen sind damit einverstanden.</label>
     <label><input type="checkbox" id="c-thumb"> Kleines Vorschaubild im Verlauf speichern</label>
     <button id="b-bewerten" disabled>Bewerten lassen</button> <b id="warte"></b>
-    <img id="vorschau" class="vorschau" hidden alt="">
+    <div id="bildbox" style="position:relative;display:inline-block;max-width:100%;margin-top:8px"><img id="vorschau" class="vorschau" hidden alt="" style="display:block;margin:0"></div>
   </div>
 
   <div id="ergebnis" hidden style="margin-top:12px"></div>
@@ -133,6 +139,18 @@ async function alsJpeg(datei, max, q) {
   return c.toDataURL("image/jpeg", q); // neu gezeichnet → keine EXIF/GPS-Daten mehr im Bild
 }
 
+function zeigeMarker(markers) {
+  const box = $("bildbox");
+  box.querySelectorAll(".mk,.mkl").forEach((x) => x.remove());
+  (markers || []).forEach((m, i) => {
+    const p = document.createElement("div"); p.className = "mk " + m.art; p.textContent = String(i + 1);
+    p.style.left = (m.x * 100) + "%"; p.style.top = (m.y * 100) + "%"; p.title = m.label;
+    const l = document.createElement("div"); l.className = "mkl"; l.textContent = m.label;
+    l.style.left = p.style.left; l.style.top = p.style.top;
+    box.append(p, l);
+  });
+}
+
 $("b-bewerten").onclick = async () => {
   const datei = $("datei").files[0];
   $("b-bewerten").disabled = true; $("ergebnis").hidden = true;
@@ -141,7 +159,7 @@ $("b-bewerten").onclick = async () => {
     schritt("Foto wird verkleinert …");
     const bild = await alsJpeg(datei, 1600, 0.85);
     const thumb = await alsJpeg(datei, 96, 0.7);
-    $("vorschau").src = bild; $("vorschau").hidden = false;
+    $("vorschau").src = bild; $("vorschau").hidden = false; zeigeMarker([]);
     schritt("Die KI schaut sich dein Foto an … (ca. 10–20 Sekunden)");
     const { status, j } = await api("/bewerten", {
       bild, thumb, verlaufBild: $("c-thumb").checked, rechte: $("c-rechte").checked, dateiname: datei.name, sprache: "de",
@@ -168,8 +186,23 @@ function zeigeErgebnis(e) {
     d.append(a, b);
   }
   el("p", e.summary);
+  if (e.merksatz) el("p", e.merksatz, "merksatz");
   const ul = el("ul");
-  for (const t of e.tips) { const li = document.createElement("li"); li.textContent = t.label + ": " + t.text; ul.append(li); }
+  for (const t of e.tips) {
+    const li = document.createElement("li"); li.textContent = t.label + ": " + t.text;
+    if (t.link && String(t.link.url).startsWith("https://")) {
+      const a = document.createElement("a"); a.href = t.link.url; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = "PPS-Lektion: " + t.link.titel + (t.link.produkt ? " (" + t.link.produkt + ")" : "");
+      li.append(document.createElement("br"), a);
+    }
+    ul.append(li);
+  }
+  if (e.markers?.length) {
+    el("b", "Markierungen im Foto (ungefähre Position)");
+    const ol = el("ol");
+    for (const m of e.markers) { const li = document.createElement("li"); li.textContent = (m.art === "staerke" ? "✓ " : m.art === "problem" ? "✗ " : "• ") + m.label; ol.append(li); }
+  }
+  zeigeMarker(e.markers);
 }
 
 $("b-verlauf").onclick = async () => zeige((await api("/verlauf")).j);
