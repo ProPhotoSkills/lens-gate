@@ -1,0 +1,7 @@
+name = "lens-gate"
+main = "index.ts"
+compatibility_date = "2026-11-01"
+
+# keep_vars verhindert, dass Cloudflare bei jedem Git-Push die im Dashboard
+# gesetzten Variablen/Secrets löscht (gleich wie bei web, content und books-gate).
+keep_vars = true
