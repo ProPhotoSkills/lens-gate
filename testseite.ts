@@ -49,7 +49,7 @@ export function testseite(supabaseUrl: string, anonKey: string, version: string)
     <label><input type="file" id="datei" accept="image/*"></label>
     <label><input type="checkbox" id="c-rechte"> Ich habe die Rechte an diesem Foto, und erkennbare Personen sind damit einverstanden.</label>
     <label><input type="checkbox" id="c-thumb"> Kleines Vorschaubild im Verlauf speichern</label>
-    <button id="b-bewerten" disabled>Bewerten lassen</button> <span id="warte" class="klein"></span>
+    <button id="b-bewerten" disabled>Bewerten lassen</button> <b id="warte"></b>
     <img id="vorschau" class="vorschau" hidden alt="">
   </div>
 
@@ -113,8 +113,19 @@ $("b-widerruf").onclick = async () => { zeige((await api("/einwilligung", { erte
 const pruefe = () => { $("b-bewerten").disabled = !($("datei").files[0] && $("c-rechte").checked); };
 $("datei").onchange = pruefe; $("c-rechte").onchange = pruefe;
 
+// Bild laden: erst createImageBitmap, sonst über <img> (Safari kann so auch HEIC)
+async function ladeBild(datei) {
+  try { return await createImageBitmap(datei); } catch (e) {
+    const url = URL.createObjectURL(datei);
+    try {
+      const img = new Image(); img.src = url; await img.decode();
+      return img;
+    } catch { throw new Error("Dieses Bildformat kann der Browser nicht öffnen (z. B. HEIC in Chrome). Bitte als JPG exportieren."); }
+    finally { setTimeout(() => URL.revokeObjectURL(url), 5000); }
+  }
+}
 async function alsJpeg(datei, max, q) {
-  const bild = await createImageBitmap(datei);
+  const bild = await ladeBild(datei);
   const f = Math.min(1, max / Math.max(bild.width, bild.height));
   const c = document.createElement("canvas");
   c.width = Math.round(bild.width * f); c.height = Math.round(bild.height * f);
@@ -124,17 +135,24 @@ async function alsJpeg(datei, max, q) {
 
 $("b-bewerten").onclick = async () => {
   const datei = $("datei").files[0];
-  $("b-bewerten").disabled = true; $("warte").textContent = "Die KI schaut sich dein Foto an …";
+  $("b-bewerten").disabled = true; $("ergebnis").hidden = true;
+  const schritt = (t) => { $("warte").textContent = t; };
   try {
+    schritt("Foto wird verkleinert …");
     const bild = await alsJpeg(datei, 1600, 0.85);
     const thumb = await alsJpeg(datei, 96, 0.7);
     $("vorschau").src = bild; $("vorschau").hidden = false;
+    schritt("Die KI schaut sich dein Foto an … (ca. 10–20 Sekunden)");
     const { status, j } = await api("/bewerten", {
       bild, thumb, verlaufBild: $("c-thumb").checked, rechte: $("c-rechte").checked, dateiname: datei.name, sprache: "de",
     });
-    zeige(j);
-    if (status === 200) zeigeErgebnis(j); else $("ergebnis").hidden = true;
-  } finally { $("warte").textContent = ""; pruefe(); ladeStand(); }
+    zeige(j ?? { fehler: "Antwort " + status });
+    if (status === 200) { zeigeErgebnis(j); schritt("Fertig ✓"); }
+    else schritt("Nicht geklappt (" + status + ") – Details unten");
+  } catch (e) {
+    schritt("Fehler: " + (e?.message || e));
+    zeige({ fehler: String(e?.message || e) });
+  } finally { pruefe(); ladeStand(); }
 };
 
 function zeigeErgebnis(e) {

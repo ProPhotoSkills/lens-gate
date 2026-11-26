@@ -1,4 +1,5 @@
-// lens-gate – Worker hinter der KI-Bildbewertung von PPS Lens (v1)
+// lens-gate – Worker hinter der KI-Bildbewertung von PPS Lens (v2)
+// v2 (26.11.2026, Claude): nur Testseite – Fortschritt und Fehler werden angezeigt, Bild-Laden mit Ausweichweg.
 // v1 (26.11.2026, Claude): Name lens-gate wie books-gate (Eric 26.11.: „beim Worker und bei Cloudflare lege ich das an mit
 //     Lensgate“). Inhalt = lens-api_v2 (Datenschutz-Fassung), sonst unverändert. Frühere Stände hießen lens-api:
 // lens-api v2 (26.11.2026, Claude): nach dem Datenschutz-Konzept (konzept_datenschutz_foto_bewertungs_app.md) überarbeitet
@@ -64,7 +65,7 @@ export interface Env {
   ALLOWED_ORIGINS?: string;
 }
 
-const VERSION = 1;
+const VERSION = 2;
 // Version des Einwilligungstextes – ändert sich der Text in der App, hier hochzählen → alle willigen neu ein
 export const DATENSCHUTZ_VERSION = "2026-11-26";
 const MAX_BILD_ZEICHEN = 6_000_000; // ≈ 4,5 MB Bild
