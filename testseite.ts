@@ -1,4 +1,5 @@
 // Testseite des Workers lens-gate (v3) – GET /test
+// v4 (26.11.): Einwilligungstext wie in der App (lens-app_v5), Textversion 2026-11-26b.
 // v3 (26.11.): Markierungen auf dem Foto, Merksatz, Links zu passenden PPS-Lektionen.
 // v2 (26.11.): Fortschritt + Fehler sichtbar, Bild-Laden mit Ausweichweg.
 // Zum Ausprobieren ohne fertige App (Eric 26.11.: „sag mir, wie wir den einmal zum Sehen kriegen“):
@@ -42,8 +43,9 @@ export function testseite(supabaseUrl: string, anonKey: string, version: string)
 
   <div id="einw" hidden style="margin-top:12px;padding:12px;background:#fff8e1;border-radius:8px">
     <b>Bevor du ein Foto bewerten lässt</b>
-    <p class="klein">Für die Bewertung wird dein Foto verkleinert und ohne Standort- und Kameradaten (GPS, Seriennummer)
-    an OpenAI (USA) übertragen, dort nur für diese Bewertung verarbeitet und nicht zum Training genutzt.
+    <p class="klein">Für die Bewertung wird dein Foto auf deinem Gerät verkleinert und ohne Standort- und Kameradaten (GPS, Seriennummer)
+    an OpenAI übertragen (Vertragspartner OpenAI Ireland, Verarbeitung auch in den USA auf Grundlage der EU-Standardvertragsklauseln).
+    OpenAI nutzt es nicht zum Training und kann Anfragen zur Missbrauchskontrolle bis zu 30 Tage aufbewahren.
     Wir speichern dein Foto nicht – nur das Ergebnis (und auf Wunsch ein kleines Vorschaubild).
     Du kannst deine Bewertungen jederzeit löschen und diese Einwilligung widerrufen. (Textversion ${version})</p>
     <label><input type="checkbox" id="c-einw"> Ich stimme zu.</label>

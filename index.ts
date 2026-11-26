@@ -1,4 +1,7 @@
-// lens-gate – Worker hinter der KI-Bildbewertung von PPS Lens (v3)
+// lens-gate – Worker hinter der KI-Bildbewertung von PPS Lens (v4)
+// v4 (26.11.2026, Claude): neuer Einwilligungstext in der App (lens-app_v5: auf dem Gerät verkleinert, Vertragspartner
+//     OpenAI Ireland, Verarbeitung auch in den USA nach EU-Standardvertragsklauseln, bis zu 30 Tage Missbrauchskontrolle)
+//     → DATENSCHUTZ_VERSION 2026-11-26b: alle Nutzer stimmen einmal neu zu. Testseite mit demselben Text.
 // v3 (26.11.2026, Claude): mehr PPS (Eric 26.11.: „mehr Intelligenz … das PPS-Universum da noch mehr abbilden … grafische
 //     Elemente, wo wir etwas zeigen können“ → „1, ja … mach mal weiter“):
 //   - PPS-Haltung wie im KI-Coach im Prompt, dazu ein „merksatz“ im PPS-Ton
@@ -75,9 +78,9 @@ export interface Env {
   ALLOWED_ORIGINS?: string;
 }
 
-const VERSION = 3;
+const VERSION = 4;
 // Version des Einwilligungstextes – ändert sich der Text in der App, hier hochzählen → alle willigen neu ein
-export const DATENSCHUTZ_VERSION = "2026-11-26";
+export const DATENSCHUTZ_VERSION = "2026-11-26b"; // v4: Text wie lens-app_v5 (i18n consent.text)
 const MAX_BILD_ZEICHEN = 6_000_000; // ≈ 4,5 MB Bild
 const MAX_THUMB_ZEICHEN = 40_000;
 
